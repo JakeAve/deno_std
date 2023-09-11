@@ -379,3 +379,8 @@ function recognize(str: string, formats?: Format[]): Format {
 
   return Format.UNKNOWN;
 }
+
+export * as any from "./any.ts";
+export * as json from "./json.ts";
+export * as toml from "./toml.ts";
+export * as yaml from "./yaml.ts";
