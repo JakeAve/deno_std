@@ -46,6 +46,42 @@ binary: !<tag:yaml.org,2002:binary> SGVsbG8=
 });
 
 Deno.test({
+  name: "allow unicode stringifies correctly",
+  fn() {
+    const FIXTURE = {
+      foo: {
+        bar: true,
+        test: [
+          "🔐 is an emoji",
+          "😀",
+          {
+            a: false,
+          },
+          {
+            a: false,
+          },
+        ],
+      },
+      test: "foobar",
+      binary: new Uint8Array([72, 101, 108, 108, 111]),
+    };
+
+    const ASSERTS = `foo:
+  bar: true
+  test:
+    - "🔐 is an emoji"
+    - "😀"
+    - a: false
+    - a: false
+test: foobar
+binary: !<tag:yaml.org,2002:binary> SGVsbG8=
+`;
+
+    assertEquals(stringify(FIXTURE, { allowUnicode: true }), ASSERTS);
+  },
+});
+
+Deno.test({
   name:
     "`!!js/*` yaml types are not handled in default schemas while stringifying",
   fn() {

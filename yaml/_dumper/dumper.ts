@@ -74,7 +74,11 @@ const DEPRECATED_BOOLEANS_SYNTAX = [
   "OFF",
 ];
 
-function encodeHex(character: number): string {
+function encodeHex(character: number, allowUnicode = false): string {
+  // if (allowUnicode === true && isUnicodeEmoji(character)) {
+  //   return String.fromCodePoint(character);
+  // }
+
   const string = character.toString(16).toUpperCase();
 
   let handle: string;
@@ -163,6 +167,20 @@ function isPrintable(c: number): boolean {
   );
 }
 
+function isUnicodeEmoji(c: number): boolean {
+  return (
+    (c >= 0x1f300 && c <= 0x1f5ff) || // Miscellaneous Symbols and Pictographs
+    (c >= 0x1f600 && c <= 0x1f64f) || // Emoticons
+    (c >= 0x1f680 && c <= 0x1f6ff) || // Transport and Map Symbols
+    (c >= 0x1f900 && c <= 0x1f9ff) || // Supplemental Symbols and Pictographs
+    (c >= 0x1fa70 && c <= 0x1faff) || // Symbols and Pictographs Extended-A
+    (c >= 0x2600 && c <= 0x26ff) || // Miscellaneous Symbols
+    (c >= 0x2700 && c <= 0x27bf) || // Dingbats
+    (c >= 0xfe00 && c <= 0xfe0f) || // Variation Selectors
+    (c >= 0x1f1e6 && c <= 0x1f1ff) // Regional Indicator Symbols
+  );
+}
+
 // Simplified test for values allowed after the first character in plain style.
 function isPlainSafe(c: number): boolean {
   // Uses a subset of nb-char - c-flow-indicator - ":" - "#"
@@ -241,13 +259,14 @@ function chooseScalarStyle(
   indentPerLevel: number,
   lineWidth: number,
   testAmbiguousType: (...args: Any[]) => Any,
+  allowUnicode = false
 ): number {
   const shouldTrackWidth = lineWidth !== -1;
   let hasLineBreak = false,
     hasFoldableLine = false, // only checked if shouldTrackWidth
     previousLineBreak = -1, // count the first line correctly
     plain = isPlainSafeFirst(string.charCodeAt(0)) &&
-      !isWhitespace(string.charCodeAt(string.length - 1));
+      !isWhitespace(string.charCodeAt(string.length - 1))
 
   let char: number, i: number;
   if (singleLineOnly) {
@@ -256,9 +275,11 @@ function chooseScalarStyle(
     for (i = 0; i < string.length; i++) {
       char = string.charCodeAt(i);
       if (!isPrintable(char)) {
+        console.log('not printable 1')
         return STYLE_DOUBLE;
       }
-      plain = plain && isPlainSafe(char);
+      plain = (plain && isPlainSafe(char)) || (allowUnicode && isUnicodeEmoji(char));
+      console.log({plain})
     }
   } else {
     // Case: block styles permitted.
@@ -274,10 +295,14 @@ function chooseScalarStyle(
               string[previousLineBreak + 1] !== " ");
           previousLineBreak = i;
         }
+      } else if ((allowUnicode && isUnicodeEmoji(char))) {
+        console.log('is unicode emoji')
+        // do nothing
       } else if (!isPrintable(char)) {
+        console.log('not printable 2', isUnicodeEmoji(char), char)
         return STYLE_DOUBLE;
       }
-      plain = plain && isPlainSafe(char);
+      plain = plain && isPlainSafe(char) || (allowUnicode && isUnicodeEmoji(char));
     }
     // in case the end is missing a \n
     hasFoldableLine = hasFoldableLine ||
@@ -391,7 +416,7 @@ function foldString(string: string, width: number): string {
 }
 
 // Escapes a double-quoted string.
-function escapeString(string: string): string {
+function escapeString(string: string, allowUnicode = false): string {
   let result = "";
   let char, nextChar;
   let escapeSeq;
@@ -405,6 +430,7 @@ function escapeString(string: string): string {
         // Combine the surrogate pair and store it escaped.
         result += encodeHex(
           (char - 0xd800) * 0x400 + nextChar - 0xdc00 + 0x10000,
+          allowUnicode,
         );
         // Advance index one extra since we already used that char here.
         i++;
@@ -414,7 +440,7 @@ function escapeString(string: string): string {
     escapeSeq = ESCAPE_SEQUENCES[char];
     result += !escapeSeq && isPrintable(char)
       ? string[i]
-      : escapeSeq || encodeHex(char);
+      : escapeSeq || encodeHex(char, allowUnicode);
   }
 
   return result;
@@ -445,6 +471,7 @@ function writeScalar(
   string: string,
   level: number,
   iskey: boolean,
+  allowUnicode = false
 ) {
   state.dump = ((): string => {
     if (string.length === 0) {
@@ -480,15 +507,20 @@ function writeScalar(
       return testImplicitResolving(state, str);
     }
 
+    const style =       chooseScalarStyle(
+      string,
+      singleLineOnly,
+      state.indent,
+      lineWidth,
+      testAmbiguity,
+      allowUnicode
+    )
+    console.log({style, allowUnicode})
+
     switch (
-      chooseScalarStyle(
-        string,
-        singleLineOnly,
-        state.indent,
-        lineWidth,
-        testAmbiguity,
-      )
+      style
     ) {
+    
       case STYLE_PLAIN:
         return string;
       case STYLE_SINGLE:
@@ -506,18 +538,14 @@ function writeScalar(
           )
         }`;
       case STYLE_DOUBLE:
-        return `"${escapeString(string)}"`;
+        return `"${escapeString(string, state.allowUnicode)}"`;
       default:
         throw new YAMLError("impossible error: invalid scalar style");
     }
   })();
 }
 
-function writeFlowSequence(
-  state: DumperState,
-  level: number,
-  object: Any,
-) {
+function writeFlowSequence(state: DumperState, level: number, object: Any) {
   let _result = "";
   const _tag = state.tag;
 
@@ -563,11 +591,7 @@ function writeBlockSequence(
   state.dump = _result || "[]"; // Empty sequence if no valid values.
 }
 
-function writeFlowMapping(
-  state: DumperState,
-  level: number,
-  object: Any,
-) {
+function writeFlowMapping(state: DumperState, level: number, object: Any) {
   let _result = "";
   const _tag = state.tag,
     objectKeyList = Object.keys(object);
@@ -811,7 +835,7 @@ function writeNode(
       }
     } else if (type === "[object String]") {
       if (state.tag !== "?") {
-        writeScalar(state, state.dump, level, iskey);
+        writeScalar(state, state.dump, level, iskey, state.allowUnicode);
       }
     } else {
       if (state.skipInvalid) return false;
@@ -826,11 +850,7 @@ function writeNode(
   return true;
 }
 
-function inspectNode(
-  object: Any,
-  objects: Any[],
-  duplicatesIndexes: number[],
-) {
+function inspectNode(object: Any, objects: Any[], duplicatesIndexes: number[]) {
   if (object !== null && typeof object === "object") {
     const index = objects.indexOf(object);
     if (index !== -1) {

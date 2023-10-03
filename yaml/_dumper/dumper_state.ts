@@ -89,6 +89,10 @@ export interface DumperStateOptions {
    * as spaces are %-encoded. (default: false).
    */
   condenseFlow?: boolean;
+  /**
+   * if true allow unicode emoji symbols to output
+   */
+  allowUnicode?: boolean;
 }
 
 export class DumperState extends State {
@@ -109,6 +113,7 @@ export class DumperState extends State {
   public usedDuplicates: Any[] = []; // changed from null to []
   public styleMap: ArrayObject<StyleVariant>;
   public dump: Any;
+  allowUnicode: boolean;
 
   constructor({
     schema,
@@ -122,6 +127,7 @@ export class DumperState extends State {
     noRefs = false,
     noCompatMode = false,
     condenseFlow = false,
+    allowUnicode = false,
   }: DumperStateOptions) {
     super(schema);
     this.indent = Math.max(1, indent);
@@ -134,6 +140,7 @@ export class DumperState extends State {
     this.noRefs = noRefs;
     this.noCompatMode = noCompatMode;
     this.condenseFlow = condenseFlow;
+    this.allowUnicode = allowUnicode;
 
     this.implicitTypes = (this.schema as Schema).compiledImplicit;
     this.explicitTypes = (this.schema as Schema).compiledExplicit;
